@@ -4,6 +4,7 @@ environment:
   show_thought_process: true
   show_kg_link: true
   log_name: Virtual-Havruta
+  use_semantic_kernel: true  # NEW: Enable SK-based orchestration
 
 # DB-related parameters
 database:
@@ -31,7 +32,7 @@ slack:
   slack_bot_token: slack_bot_token
   slack_app_token: slack_app_token
   
-# Model API parameters
+# Model API parameters - Updated for SK compatibility
 openai_model_api:
   api_key: openai_model_api_key
   main_model: main_model_name
@@ -40,14 +41,38 @@ openai_model_api:
   support_model_temperature: 0
   embedding_model: embedding_model_name
 
-# LLM Chain Setups
+# Semantic Kernel Configuration - NEW
+semantic_kernel:
+  plugins:
+    - name: "VirtualHavruta"
+      functions:
+        - "anti_attack"
+        - "adaptor" 
+        - "editor"
+        - "optimizer"
+        - "qa"
+        - "selector"
+        - "classification"
+  planners:
+    action_planner:
+      enabled: true
+    sequential_planner:
+      enabled: true
+  memory:
+    store_type: "volatile"  # Options: "volatile", "azure_cognitive_search"
+    collections:
+      - "primary_sources"
+      - "secondary_sources"
+      - "graph_nodes"
+
+# LLM Chain Setups - Updated to map to SK functions
 llm_chain_setups:
-  main_model: ['chain1', 'chain2']
-  main_model_json: ['chain3'] #LLM chains that require a json output format
-  support_model: ['chain4', 'chain5', 'chain6']
-  support_model_json: [] #LLM chains that require a json output format
-  ref_chains: ['chain1', 'chain3', 'chain4', 'chain5'] #LLM chains that require reference data as part of the input. These should correspond to those chains in main_model(_json) and support_model(_json).
-  no_ref_chains: ['chain2', 'chain6'] #LLM chains that don't require reference data as part of the input. These should correspond to those chains in main_model(_json) and support_model(_json).
+  main_model: ['qa', 'anti_attack']  # Map to SK functions
+  main_model_json: ['optimizer'] # SK functions that require JSON output format
+  support_model: ['adaptor', 'editor', 'selector', 'classification']
+  support_model_json: [] # SK functions that require JSON output format
+  ref_chains: ['qa', 'selector', 'classification'] # SK functions that require reference data as input
+  no_ref_chains: ['adaptor', 'editor', 'anti_attack'] # SK functions that don't require reference data
 
 # Reference Settings
 references:

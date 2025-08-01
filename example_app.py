@@ -2,8 +2,8 @@
 import os
 import yaml
 
-# Import Virtual Havruta class
-from VirtualHavruta import VirtualHavruta
+# Import Semantic Kernel-based Virtual Havruta class
+from VirtualHavruta import VirtualHavrutaSemanticKernel, create_sk_havruta
 
 # Import Slack SDK modules for bot interaction
 from slack_bolt import App
@@ -24,19 +24,22 @@ slack_app_token = slack_params["slack_app_token"]
 
 # Retrieve other parameters
 openai_key = config["openai_model_api"]["api_key"]
-log_path = config["files"]["log_path"]
+log_name = config["environment"]["log_name"]
+use_semantic_kernel = config["environment"].get("use_semantic_kernel", True)
 
 # Set up environmental variables for Slack API and OpenAI access
 os.environ["SLACK_BOT_TOKEN"] = slack_bot_token
 os.environ["SLACK_APP_TOKEN"] = slack_app_token
 os.environ["OPENAI_API_KEY"] = openai_key
 
-
 # Create logger, slack app, slack client, and Virtual Havruta instance
-vh_logger = create_logger(f=log_path)
+vh_logger = create_logger(log_name)
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"), logger=vh_logger)
 client = WebClient(token=os.environ["SLACK_BOT_TOKEN"])
-vh = VirtualHavruta('prompts.yaml', 'config.yaml', vh_logger)
+
+# Initialize SK-based Virtual Havruta
+vh = create_sk_havruta('prompts.yaml', 'config.yaml', vh_logger)
+vh_logger.info(f"[MAIN] Initialized {'Semantic Kernel' if use_semantic_kernel else 'LangChain'}-based Virtual Havruta")
 
 # Slack Pipeline
 def slack_post_msg(slack_client, channel_id, message_ts, msg, logger, kg_msg=''):
@@ -111,9 +114,76 @@ def slack_pipeline(body, logger):
             
             '''
             ####################
-            Insert customized response functionalities here
+            SK-Based Virtual Havruta Response Pipeline
             ####################
             '''
+            
+            # Step 1: Anti-attack screening using SK
+            detection, explanation, tokens_anti_attack = vh.anti_attack(query, msgid)
+            total_tokens += tokens_anti_attack
+            
+            if detection == 'Y':
+                error_msg = f"Query flagged as potential attack: {explanation}"
+                slack_post_msg(client, channel_id, message_ts, error_msg, logger)
+                return
+            
+            # Step 2: Query adaptation using SK
+            adapted_query, tokens_adaptor = vh.adaptor(query, msgid)
+            total_tokens += tokens_adaptor
+            
+            # Step 3: Query optimization using SK  
+            translation, extraction, elaboration, quotation, challenge, proposal, tokens_optimizer = vh.optimizer(adapted_query, msgid)
+            total_tokens += tokens_optimizer
+            
+            # Step 4: Document retrieval using SK retrieval system
+            documents = vh.retrieve_docs(adapted_query, msgid, 'primary')
+            
+            # Step 5: Reference selection and sorting using SK
+            selected_docs, tokens_selector = vh.select_reference(adapted_query, documents, msgid)
+            total_tokens += tokens_selector
+            
+            sorted_src_rel_dict, src_data_dict, src_ref_dict, tokens_sorting = vh.sort_reference(
+                adapted_query, elaboration, selected_docs, 'primary', msgid
+            )
+            total_tokens += tokens_sorting
+            
+            # Step 6: Generate reference string and citations
+            ref_data, citations, deeplinks, n_citations = vh.generate_ref_str(
+                sorted_src_rel_dict, src_data_dict, src_ref_dict, msgid
+            )
+            
+            # Step 7: Question answering using SK
+            if ref_data:
+                response, tokens_qa = vh.qa(adapted_query, ref_data, msgid)
+                total_tokens += tokens_qa
+            else:
+                response = "I apologize, but I couldn't find relevant sources to answer your question."
+            
+            # Step 8: Generate KG deep link if enabled
+            kg_msg = ""
+            if config["environment"]["show_kg_link"] and deeplinks:
+                kg_link = vh.generate_kg_deeplink(deeplinks, msgid)
+                if kg_link:
+                    kg_msg = f"🔗 [Explore Knowledge Graph]({kg_link})"
+            
+            # Step 9: Format final response
+            final_response = response
+            if config["environment"]["show_thought_process"]:
+                thought_process = f"""
+**Thought Process:**
+- Query Analysis: {explanation if explanation else 'No issues detected'}
+- Adapted Query: {adapted_query}
+- Key Extraction: {extraction}
+- Sources Found: {len(selected_docs)} documents
+- Citations: {n_citations} references
+                """.strip()
+                final_response = f"{response}\n\n{thought_process}"
+            
+            if citations:
+                final_response += f"\n\n**Sources:**\n{citations}"
+            
+            # Post the final response
+            slack_post_msg(client, channel_id, message_ts, final_response, logger, kg_msg)
 
             # Log the total number of tokens spent processing this query
             logger.info(f"MsgID={msgid}. [Token Count] Spent {total_tokens} tokens in total for this round of query.")
