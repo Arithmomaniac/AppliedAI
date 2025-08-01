@@ -1,17 +1,239 @@
-# Virtual Havruta
+# Virtual Havruta - Semantic Kernel Edition
+
 ## Introduction
-Virtual Havruta is a groundbreaking project that represents a collaboration between TUM Venture Labs, Sefaria, and appliedAI Initiative GmbH. This initiative harnesses the power of Language Model-based Retrieval-Augmented Generation (RAG) techniques to create an innovative study companion. Designed for individuals seeking a deeper understanding of Judaism's scriptures, Virtual Havruta stands as a beacon of knowledge and inspiration in the domain of religious study.
+Virtual Havruta is a groundbreaking project that represents a collaboration between TUM Venture Labs, Sefaria, and appliedAI Initiative GmbH. This initiative harnesses the power of **Microsoft Semantic Kernel** for Language Model-based Retrieval-Augmented Generation (RAG) techniques to create an innovative study companion. Designed for individuals seeking a deeper understanding of Judaism's scriptures, Virtual Havruta stands as a beacon of knowledge and inspiration in the domain of religious study.
+
+## Major Update: Semantic Kernel Migration 🚀
+
+This version has been completely rewritten to use **Microsoft Semantic Kernel** for all LLM and RAG orchestration, replacing the previous LangChain-based implementation. This migration provides:
+
+### Key Benefits of SK Integration:
+- **Enhanced Modularity**: SK plugins and planners provide better separation of concerns
+- **Future-Ready Architecture**: Built for extensibility and domain adaptation
+- **Improved Orchestration**: Advanced planning capabilities for complex workflows
+- **Better Memory Management**: Integrated memory stores for enhanced retrieval
+- **Extensible Connectors**: Easy integration with various AI services
+
+### Migration Features:
+- ✅ **SK Plugins**: All LLM chains converted to SK functions (anti-attack, adaptor, editor, optimizer, QA, etc.)
+- ✅ **SK Memory Stores**: Vector retrieval using SK memory connectors
+- ✅ **SK Planners**: Workflow orchestration via SK planners
+- ✅ **SK Connectors**: OpenAI integration through SK connectors
+- ✅ **Backward Compatibility**: All existing features preserved
+- ✅ **Enhanced Configuration**: SK-compatible configuration system
+
 ## Project Aim
-The primary goal of Virtual Havruta is to offer trustworthy and factually correct responses to users interested in exploring various aspects of Judaism. By showcasing how different branches of Judaism would approach specific questions and providing reliable references, our tool aims not only to educate but also to inspire. Moreover, the underlying technology has versatile applications, extending to fields like code generation, customer service, internal knowledge retrieval, and engineering support.
+The primary goal of Virtual Havruta is to offer trustworthy and factually correct responses to users interested in exploring various aspects of Judaism. By showcasing how different branches of Judaism would approach specific questions and providing reliable references, our tool aims not only to educate but also to inspire. The underlying Semantic Kernel technology has versatile applications, extending to fields like code generation, customer service, internal knowledge retrieval, and engineering support.
+
 ## Key Features
-- **Domain-Specific Application**: Utilizes LLM-based RAG techniques tailored for the study of Judaism scriptures.
-- **Addressing LLM Challenges**: Aligns with the current industrial trend to mitigate the issue of hallucination in Language Models.
-- **Comprehensive Study Companion**: Offers insightful analysis into different interpretations within Judaism, coupled with dependable references.
-- **Collaborative Effort**: A product of the joint efforts of Sefaria, TUM Venture Labs, and appliedAI Initiative GmbH, symbolizing a unique blend of religious scholarship and cutting-edge technology.
+- **Semantic Kernel Orchestration**: Utilizes SK planners, plugins, and connectors for advanced LLM orchestration
+- **Domain-Specific Application**: Tailored for the study of Judaism scriptures using SK-based RAG techniques
+- **Advanced Memory Management**: SK memory stores for enhanced document retrieval and ranking
+- **Extensible Plugin Architecture**: SK functions for all NLP operations (screening, adaptation, optimization, QA)
+- **Intelligent Planning**: SK planners for complex multi-step workflows
+- **Addressing LLM Challenges**: Aligns with current trends to mitigate hallucination in Language Models
+- **Comprehensive Study Companion**: Offers insightful analysis into different interpretations within Judaism
+- **Future-Ready Design**: Built for easy domain adaptation within the SK ecosystem
+
+## Architecture Overview
+
+### Semantic Kernel Components:
+
+1. **SK Plugins** (`sk_plugins.py`):
+   - `VirtualHavrutaSemanticKernelPlugin`: Main plugin containing all SK functions
+   - Functions: `anti_attack`, `adaptor`, `editor`, `optimizer`, `qa`, `selector`, `classification`
+   - Replaces all LangChain LLM chains with SK function implementations
+
+2. **SK Retrieval** (`sk_retrieval.py`):
+   - `SemanticKernelRetriever`: SK-based document retrieval system
+   - Memory stores for vector search and semantic retrieval
+   - Graph traversal simulation using SK memory operations
+   - Advanced result merging and ranking
+
+3. **SK Orchestrator** (`sk_orchestrator.py`):
+   - `VirtualHavrutaSemanticKernel`: Main SK-based Virtual Havruta class
+   - Replaces the original `VirtualHavruta` with SK planners and orchestration
+   - Maintains full API compatibility while using SK under the hood
+
+### Configuration:
+
+The system now supports SK-specific configuration in `config.yaml`:
+
+```yaml
+environment:
+  use_semantic_kernel: true  # Enable SK-based orchestration
+
+semantic_kernel:
+  plugins:
+    - name: "VirtualHavruta"
+      functions: ["anti_attack", "adaptor", "editor", "optimizer", "qa", "selector", "classification"]
+  planners:
+    action_planner:
+      enabled: true
+    sequential_planner:
+      enabled: true
+  memory:
+    store_type: "volatile"  # Options: "volatile", "azure_cognitive_search"
+    collections: ["primary_sources", "secondary_sources", "graph_nodes"]
+```
+
 ## How it Works
-Virtual Havruta integrates advanced retrieval-augmented generation models to analyze and respond to user queries. By delving into a vast repository of religious texts and interpretations, it provides nuanced perspectives on various Judaic topics. This approach ensures that users receive not just answers, but also contextually rich and theologically sound insights.
+Virtual Havruta integrates advanced Semantic Kernel planners and plugins to analyze and respond to user queries. The SK-based architecture provides:
+
+1. **Query Processing Pipeline**:
+   - Anti-attack screening using SK functions
+   - Query adaptation and optimization
+   - Multi-source retrieval coordination
+
+2. **Enhanced Retrieval**:
+   - SK memory stores for semantic search
+   - Graph traversal using SK memory operations
+   - Advanced result merging and ranking
+
+3. **Intelligent Orchestration**:
+   - SK planners for complex workflow management
+   - Dynamic plugin coordination
+   - Adaptive response generation
+
+By leveraging SK's memory stores and planning capabilities, it provides nuanced perspectives on various Judaic topics with enhanced reliability and extensibility.
+
+## Installation and Setup
+
+### Prerequisites
+- Python 3.12+
+- OpenAI API key
+- Semantic Kernel dependencies
+
+### Installation
+```bash
+pip install -r requirements.txt
+```
+
+### Configuration
+1. Update `config.yaml` with your API keys and database connections
+2. Set `use_semantic_kernel: true` in the environment section
+3. Configure SK-specific settings under the `semantic_kernel` section
+
+### Usage
+```python
+from VirtualHavruta import create_sk_havruta
+from VirtualHavruta.util import create_logger
+
+logger = create_logger()
+vh = create_sk_havruta('prompts.yaml', 'config.yaml', logger)
+
+# Use the same API as before - SK integration is transparent
+detection, explanation, tokens = vh.anti_attack("Your query here")
+adapted_query, tokens = vh.adaptor("Your query here")
+response, tokens = vh.qa("Your question", "Reference data")
+```
+
+## Migration Guide
+
+### For Developers:
+The migration maintains full API compatibility. Existing code should work without changes:
+
+```python
+# Old LangChain-based usage (still works)
+from VirtualHavruta import VirtualHavruta
+vh = VirtualHavruta('prompts.yaml', 'config.yaml', logger)
+
+# New SK-based usage (recommended)
+from VirtualHavruta import create_sk_havruta  
+vh = create_sk_havruta('prompts.yaml', 'config.yaml', logger)
+
+# Same API for both!
+response, tokens = vh.qa("question", "reference_data")
+```
+
+### Configuration Migration:
+- Add `use_semantic_kernel: true` to enable SK
+- Add `semantic_kernel` section for SK-specific configuration
+- Existing `llm_chain_setups` now maps to SK functions
+
 ## Usage and Applications
-The application of Virtual Havruta is vast, ranging from individual study sessions to group discussions and academic research. Its ability to provide diverse viewpoints and references makes it an invaluable tool for anyone seeking to explore the depths of Judaism's rich textual tradition.
+The SK-based Virtual Havruta application scope is vast, ranging from individual study sessions to group discussions and academic research. Its ability to provide diverse viewpoints and references makes it an invaluable tool for anyone seeking to explore the depths of Judaism's rich textual tradition. The SK architecture makes it easily adaptable to other domains and use cases.
+
+## Virtual Havruta - SK Functions Overview
+
+This document outlines the core SK functions used in the `VirtualHavrutaSemanticKernel` class, replacing the previous LangChain implementation.
+
+### SK Plugin Functions
+
+| SK Function | Purpose | Input Parameters | Output |
+|-------------|---------|------------------|---------|
+| `anti_attack` | Analyzes queries for potential attacks using SK | `query: str`, `msg_id: str` | JSON with detection result and explanation |
+| `adaptor` | Adapts and enriches queries using SK | `query: str`, `msg_id: str` | Adapted query text |
+| `editor` | Edits and improves query text using SK | `query: str`, `msg_id: str` | Edited query text |
+| `optimizer` | Optimizes queries with multiple components using SK | `query: str`, `msg_id: str` | JSON with optimization components |
+| `qa` | Performs question-answering with SK | `query: str`, `ref_data: str`, `msg_id: str` | Answer text |
+| `selector` | Selects relevant references using SK | `query: str`, `ref_data: str`, `msg_id: str` | Selected references |
+| `classification` | Classifies references by type using SK | `query: str`, `ref_data: str`, `msg_id: str` | Classification results |
+
+### SK Retrieval Functions
+
+| Function | Purpose | Input Parameters | Output |
+|----------|---------|------------------|---------|
+| `retrieve_documents_semantic` | Semantic search via SK memory | `query: str`, `top_k: int`, etc. | List of RetrievalResult |
+| `retrieve_documents_graph_traversal` | Graph traversal using SK memory | `seed_documents: List`, `query: str`, etc. | List of RetrievalResult |
+| `merge_and_rank_results` | Merge and rank results using SK embeddings | Multiple result lists | Ranked documents and scores |
+
+### SK Orchestration Functions
+
+All original VirtualHavruta methods are preserved with SK implementations:
+- `anti_attack()`, `adaptor()`, `editor()`, `optimizer()`, `qa()`
+- `retrieve_docs()`, `graph_traversal_retriever()`, `select_reference()`, `sort_reference()`
+- `generate_ref_str()`, `generate_kg_deeplink()`, etc.
+
+## Configuration Guide for SK-Enhanced config.yaml
+
+### New SK-Specific Sections:
+
+```yaml
+environment:
+  use_semantic_kernel: true  # Enable SK orchestration
+
+semantic_kernel:
+  plugins:
+    - name: "VirtualHavruta"
+      functions: ["anti_attack", "adaptor", "editor", "optimizer", "qa", "selector", "classification"]
+  
+  planners:
+    action_planner:
+      enabled: true
+    sequential_planner:
+      enabled: true
+  
+  memory:
+    store_type: "volatile"  # or "azure_cognitive_search"
+    collections:
+      - "primary_sources"
+      - "secondary_sources" 
+      - "graph_nodes"
+```
+
+### Updated Chain Mappings:
+```yaml
+llm_chain_setups:
+  main_model: ['qa', 'anti_attack']          # Map to SK functions
+  support_model: ['adaptor', 'editor', 'selector', 'classification']
+  ref_chains: ['qa', 'selector', 'classification']    # SK functions needing references
+  no_ref_chains: ['adaptor', 'editor', 'anti_attack'] # SK functions not needing references
+```
+
+## Future Directions
+The SK-based Virtual Havruta opens new possibilities for domain adaptation and extensibility:
+
+- **Multi-Domain Support**: Easy adaptation to other religious or academic domains
+- **Advanced Planning**: Complex multi-step reasoning workflows
+- **Memory Integration**: Persistent learning and knowledge accumulation  
+- **Plugin Ecosystem**: Extensible function library for specialized tasks
+- **Cloud Integration**: Azure Cognitive Search and other cloud services
+
+While currently focused on Judaic scriptures, the underlying SK technology provides a robust foundation for broader applications across various knowledge domains.
+
+## Acknowledgments
+This project represents the collaborative efforts of TUM Venture Labs, Sefaria, and appliedAI Initiative GmbH, enhanced by the power of Microsoft Semantic Kernel. We extend our gratitude to all contributors for their dedication to both innovation and religious scholarship, and to the Microsoft Semantic Kernel team for providing the foundation for this advanced AI orchestration platform.
 ## Virtual Havruta - Functions Overview
 
 This document outlines the core functions used in the `VirtualHavruta` class. The functions are grouped by their purpose, detailing the inputs, outputs, and their role within the system.
