@@ -82,35 +82,34 @@ class VirtualHavruta:
     
     def __init__(self, prompts_file: str, config_file: str, logger):
         '''
-        Initializes the instance with data from provided YAML files, including prompts, configurations, and reference information.
+        Initializes the VirtualHavruta instance with modern LangChain patterns and best practices.
         
         This constructor method reads data from two YAML files: one containing prompts and the other containing configuration details.
-        It loads the prompts and configurations into corresponding attributes.
-        Additionally, it sets up the Neo4j vector index for semantic search and retrieves database configurations such as URL, username, and password.
-        It initializes a logger and a pagerank lookup table based on configuration.
-        Furthermore, it retrieves reference-related configurations, including filters and citation counts, and initializes prompt templates and language model instances.
+        It loads the prompts and configurations into corresponding attributes and sets up modern LangChain components including:
+        - Modern LCEL pipelines for all language model interactions
+        - BaseRetriever-compliant semantic retriever for proper RAG patterns
+        - Neo4j vector store integration with OpenAI embeddings
+        - Proper separation of retrieval and generation logic
+        
+        The initialization follows current LangChain best practices with proper type annotations, modern chain composition,
+        and clean separation of concerns between different components.
         
         Parameters:
             prompts_file (str): The path to the YAML file containing prompts.
             config_file (str): The path to the YAML file containing configuration details.
             logger: The logger instance for logging information and errors.
         
-        Attributes:
+        Modern LangChain Attributes:
             prompts (dict): A dictionary containing prompts loaded from the prompts YAML file.
             config (dict): A dictionary containing configuration details loaded from the config YAML file.
+            semantic_retriever (SemanticRetriever): Modern BaseRetriever-compliant retriever for document retrieval.
             neo4j_vector (Neo4jVector): An instance of Neo4jVector for semantic search using Neo4j.
-            top_k (int): The top k results to retrieve from the Neo4j database.
-            neo4j_deeplink (str): The URL for the Neo4j dashboard deep link.
-            logger: The logger instance used for logging information and errors.
-            pr_table (DataFrame): A pandas DataFrame containing pagerank lookup table data.
-            primary_source_filter (list): A list of primary source filters for reference data.
-            num_primary_citations (int): The number of primary citations to retrieve.
-            num_secondary_citations (int): The number of secondary citations to retrieve.
-            linker_primary_source_filter (list): A list of primary source filters specific to linker references.
+            LCEL chains (various): Modern pipeline-based chains using | operator composition.
         
-        Methods:
-            initialize_prompt_templates(): Initializes prompt templates based on configuration data.
-            initialize_llm_instances(): Initializes language model instances based on configuration data.
+        Modern Methods Available:
+            create_rag_chain(): Creates modern RAG pipelines with clear retrieval/generation separation.
+            qa_with_rag(): Demonstrates end-to-end RAG patterns.
+            retrieve_docs(): Modernized retrieval with proper filtering.
         '''
         with open(prompts_file, 'r') as f:
             self.prompts = yaml.safe_load(f)
@@ -177,11 +176,11 @@ class VirtualHavruta:
 
     def create_prompt_template(self, category: str, template: str, ref_mode: bool = False) -> ChatPromptTemplate:
         '''
-        Creates a prompt template for chat interactions based on a given category and template, optionally incorporating reference data.
+        Creates a modern ChatPromptTemplate for chat interactions following current LangChain best practices.
         
-        This function generates a prompt template suitable for chat interactions by combining system messages with a human message template.
+        This function generates a prompt template suitable for chat interactions by combining system messages with human message templates.
         It constructs the human message template dynamically based on whether reference data is required, incorporating it if the `ref_mode` parameter is set to True.
-        The resulting prompt template is encapsulated in a `ChatPromptTemplate` object, which includes both system and human message components.
+        The resulting prompt template follows modern LangChain patterns and is compatible with LCEL pipelines.
         
         Parameters:
             category (str): The category of the prompt template, specifying the type of interaction or task.
@@ -189,10 +188,12 @@ class VirtualHavruta:
             ref_mode (bool, optional): A flag indicating whether reference data should be included in the prompt; defaults to False.
         
         Returns:
-            ChatPromptTemplate: A `ChatPromptTemplate` object containing the system message and human message components necessary for chat interactions.
+            ChatPromptTemplate: A modern `ChatPromptTemplate` object containing the system message and human message components 
+                               necessary for chat interactions, compatible with LCEL pipelines.
         
         Example:
-            create_prompt_template("qa", "default", ref_mode=True) returns a `ChatPromptTemplate` object with a system message from the 'qa' category and a human message template that includes reference data.
+            create_prompt_template("qa", "default", ref_mode=True) returns a `ChatPromptTemplate` object with a system message 
+            from the 'qa' category and a human message template that includes reference data.
         '''
         system_message = SystemMessage(content=self.prompts[category][template])
         human_template = f"Question: {{human_input}}{' Reference Data: {ref_data}' if ref_mode else ''}."
