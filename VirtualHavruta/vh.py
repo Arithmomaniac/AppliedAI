@@ -13,10 +13,11 @@ from langchain_core.documents import Document
 # Import custom langchain modules for NLP operations and vector search
 from langchain_community.vectorstores import Neo4jVector
 from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.chains import LLMChain
 from langchain_community.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.output_parsers import StrOutputParser
 from langchain_community.callbacks import get_openai_callback
 import requests
 
@@ -168,16 +169,17 @@ class VirtualHavruta:
 
     def initialize_llm_chains(self, model, suffixes):
         '''
-        Initializes multiple language model chains on a class instance, each configured with a specific prompt template and suffix.
+        Initializes multiple language model chains on a class instance using modern LCEL patterns, 
+        each configured with a specific prompt template and suffix.
         
-        This function dynamically creates and assigns language model chain objects to attributes of a class instance.
+        This function dynamically creates and assigns LCEL pipeline objects to attributes of a class instance.
         It uses a base model and a list of suffixes to generate attribute names and corresponding prompt templates.
-        Each chain is initialized with the same model but different prompt templates, which are assumed to be predefined as attributes on the class instance.
-        This approach facilitates the management and use of multiple specialized tasks, such as QA, optimization, and adaptation, each requiring different prompt configurations.
+        Each chain is initialized as an LCEL pipeline using the | operator for composition, following modern LangChain best practices.
+        This approach facilitates the management and use of multiple specialized tasks, such as QA, optimization, and adaptation.
         
         Parameters:
         model (LanguageModel): The language model to be used for all chains.
-        suffixes (list of str): A list of suffix identifiers that correspond to different tasks or configurations. These suffixes are used to form both the attribute names for the chains and to retrieve corresponding prompt templates from the class instance.
+        suffixes (list of str): A list of suffix identifiers that correspond to different tasks or configurations.
 
         Example:
             initialize_llm_chains(getattr(self, model_name), suffixes)
@@ -188,34 +190,39 @@ class VirtualHavruta:
 
     def create_llm_chain(self, llm, prompt_template):
         '''
-        Creates and returns an instance of a language model chain configured with a specified language model and prompt template.
+        Creates and returns a modern LCEL pipeline configured with a specified language model and prompt template.
         
-        This function initializes a language model chain using the provided language model and prompt template.
-        It sets the verbosity level to 'False' by default, which minimizes logging or debug output from the chain itself.
-        The resulting object is designed to facilitate customized interactions with the language model based on the specified prompt structure, enhancing the flexibility and applicability of the model for various tasks.
+        This function initializes a LangChain Expression Language (LCEL) pipeline using the provided language model and prompt template.
+        The pipeline follows modern LangChain best practices with the | operator for composition and includes a lambda function
+        to extract the content from the LLM response, maintaining compatibility with the existing codebase.
+        The resulting pipeline is designed to facilitate customized interactions with the language model based on the specified prompt structure,
+        enhancing the flexibility and applicability of the model for various tasks while following current LangChain idioms.
         
         Parameters:
-        llm (LanguageModel): The language model to be used in the chain.
-        prompt_template (str): The template string that defines the structure and content of prompts to be sent to the language model.
+        llm (LanguageModel): The language model to be used in the pipeline.
+        prompt_template (ChatPromptTemplate): The prompt template that defines the structure and content of prompts to be sent to the language model.
         
         Returns:
-        LLMChain: An instance of a language model chain configured with the given language model and prompt template.
+        RunnableSequence: A modern LCEL pipeline configured with the given language model and prompt template.
 
         Example:
-        create_llm_chain(model, getattr(self, f"prompt_{suffix}")))
+        create_llm_chain(model, getattr(self, f"prompt_{suffix}"))
         '''
-        return LLMChain(llm=llm, prompt=prompt_template, verbose=False)
+        # Use a lambda to extract content from the LLM response instead of StrOutputParser
+        # This ensures compatibility with existing code expectations
+        return prompt_template | llm | RunnableLambda(lambda x: x.content)
 
     def make_prediction(self, chain, query: str, action: str, msg_id: str = '', ref_data: str = ''):
         '''
-        Executes a prediction using a specified language model chain, providing logging and token tracking.
+        Executes a prediction using a modern LCEL pipeline, providing logging and token tracking.
 
-        This function interfaces with a language model chain to perform a specific action (e.g., QA, optimization, editing) based on the provided query and optional reference data.
+        This function interfaces with a modern LangChain Expression Language (LCEL) pipeline to perform a specific action 
+        (e.g., QA, optimization, editing) based on the provided query and optional reference data.
         It measures the number of tokens used in the process using a callback mechanism and logs both successful results and errors.
         The function is designed to handle both scenarios where reference data is and is not provided, optimizing its request to the model accordingly.
         
         Parameters:
-        chain (LanguageModelChain): The specific language model chain used for prediction.
+        chain (RunnableSequence): The LCEL pipeline used for prediction.
         query (str): The input query string for which the prediction is needed.
         action (str): The type of action the model is performing, used for logging.
         msg_id (str, optional): A message identifier used for logging purposes; defaults to an empty string.
@@ -232,7 +239,12 @@ class VirtualHavruta:
         '''
         with get_openai_callback() as cb:
             try: 
-                res = chain.predict(human_input=query, ref_data=ref_data) if ref_data else chain.predict(human_input=query)
+                # Prepare input for LCEL pipeline
+                input_dict = {"human_input": query}
+                if ref_data:
+                    input_dict["ref_data"] = ref_data
+                
+                res = chain.invoke(input_dict)
                 self.logger.info(f"MsgID={msg_id}. [INFERENCE] Spent {cb.total_tokens} tokens for {action}. Query={query}. Reference data={ref_data}. Result={res}.")
             except Exception as e:
                 self.logger.error(f"MsgID={msg_id}. [INFERENCE] Spent {cb.total_tokens} tokens for {action} but failed. Error is {e}.")
