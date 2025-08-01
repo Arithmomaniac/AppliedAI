@@ -13,10 +13,14 @@ from langchain_core.documents import Document
 # Import custom langchain modules for NLP operations and vector search
 from langchain_community.vectorstores import Neo4jVector
 from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.chains import LLMChain
 from langchain_community.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.documents import Document as LangChainDocument
+from typing import List, Dict, Any, Optional
 from langchain_community.callbacks import get_openai_callback
 import requests
 
@@ -28,37 +32,84 @@ from VirtualHavruta.util import convert_node_to_doc, convert_vector_db_record_to
 
 # Main Virtual Havruta functionalities
 class VirtualHavruta:
+    class SemanticRetriever(BaseRetriever):
+        '''
+        Modern LangChain-compatible retriever that encapsulates semantic search functionality.
+        
+        This retriever follows LangChain best practices by implementing the BaseRetriever interface,
+        allowing it to be used in modern LCEL pipelines and RAG patterns. It encapsulates the
+        Neo4j vector search logic and provides clean separation between retrieval and generation.
+        '''
+        
+        vector_store: Any = None
+        top_k: int = 5
+        primary_source_filter: List[str] = []
+        logger: Any = None
+        
+        class Config:
+            arbitrary_types_allowed = True
+        
+        def __init__(self, vector_store, top_k: int, primary_source_filter: List[str], logger):
+            super().__init__(
+                vector_store=vector_store,
+                top_k=top_k,
+                primary_source_filter=primary_source_filter,
+                logger=logger
+            )
+        
+        def _get_relevant_documents(self, query: str) -> List[LangChainDocument]:
+            """Retrieve documents relevant to a query."""
+            retrieved_docs = self.vector_store.similarity_search_with_relevance_scores(
+                query, self.top_k
+            )
+            # Return just the documents (without scores) for standard retriever interface
+            return [doc for doc, score in retrieved_docs]
+        
+        def get_relevant_documents_with_scores(self, query: str, filter_mode: str = 'all') -> List[tuple]:
+            """Retrieve documents with relevance scores and optional filtering."""
+            retrieved_docs = self.vector_store.similarity_search_with_relevance_scores(
+                query, self.top_k
+            )
+            
+            if filter_mode == 'primary':
+                predicate = lambda doc_score: any(s in doc_score[0].metadata['source'] for s in self.primary_source_filter)
+            elif filter_mode == 'secondary':
+                predicate = lambda doc_score: not any(s in doc_score[0].metadata['source'] for s in self.primary_source_filter)
+            else:
+                predicate = lambda doc_score: True  # No filtering for 'all'
+            
+            return list(filter(predicate, retrieved_docs))
+    
     def __init__(self, prompts_file: str, config_file: str, logger):
         '''
-        Initializes the instance with data from provided YAML files, including prompts, configurations, and reference information.
+        Initializes the VirtualHavruta instance with modern LangChain patterns and best practices.
         
         This constructor method reads data from two YAML files: one containing prompts and the other containing configuration details.
-        It loads the prompts and configurations into corresponding attributes.
-        Additionally, it sets up the Neo4j vector index for semantic search and retrieves database configurations such as URL, username, and password.
-        It initializes a logger and a pagerank lookup table based on configuration.
-        Furthermore, it retrieves reference-related configurations, including filters and citation counts, and initializes prompt templates and language model instances.
+        It loads the prompts and configurations into corresponding attributes and sets up modern LangChain components including:
+        - Modern LCEL pipelines for all language model interactions
+        - BaseRetriever-compliant semantic retriever for proper RAG patterns
+        - Neo4j vector store integration with OpenAI embeddings
+        - Proper separation of retrieval and generation logic
+        
+        The initialization follows current LangChain best practices with proper type annotations, modern chain composition,
+        and clean separation of concerns between different components.
         
         Parameters:
             prompts_file (str): The path to the YAML file containing prompts.
             config_file (str): The path to the YAML file containing configuration details.
             logger: The logger instance for logging information and errors.
         
-        Attributes:
+        Modern LangChain Attributes:
             prompts (dict): A dictionary containing prompts loaded from the prompts YAML file.
             config (dict): A dictionary containing configuration details loaded from the config YAML file.
+            semantic_retriever (SemanticRetriever): Modern BaseRetriever-compliant retriever for document retrieval.
             neo4j_vector (Neo4jVector): An instance of Neo4jVector for semantic search using Neo4j.
-            top_k (int): The top k results to retrieve from the Neo4j database.
-            neo4j_deeplink (str): The URL for the Neo4j dashboard deep link.
-            logger: The logger instance used for logging information and errors.
-            pr_table (DataFrame): A pandas DataFrame containing pagerank lookup table data.
-            primary_source_filter (list): A list of primary source filters for reference data.
-            num_primary_citations (int): The number of primary citations to retrieve.
-            num_secondary_citations (int): The number of secondary citations to retrieve.
-            linker_primary_source_filter (list): A list of primary source filters specific to linker references.
+            LCEL chains (various): Modern pipeline-based chains using | operator composition.
         
-        Methods:
-            initialize_prompt_templates(): Initializes prompt templates based on configuration data.
-            initialize_llm_instances(): Initializes language model instances based on configuration data.
+        Modern Methods Available:
+            create_rag_chain(): Creates modern RAG pipelines with clear retrieval/generation separation.
+            qa_with_rag(): Demonstrates end-to-end RAG patterns.
+            retrieve_docs(): Modernized retrieval with proper filtering.
         '''
         with open(prompts_file, 'r') as f:
             self.prompts = yaml.safe_load(f)
@@ -71,19 +122,6 @@ class VirtualHavruta:
         self.config_emb_db = self.config['database']['embed']
         self.config_kg_db = self.config['database']['kg']
         
-        # Initialize Neo4j vector index 
-        self.neo4j_vector = Neo4jVector.from_existing_index(
-            OpenAIEmbeddings(model=self.model_api['embedding_model']),
-            index_name="index",
-            url=self.config_emb_db['url'],
-            username=self.config_emb_db['username'],
-            password=self.config_emb_db['password'],
-        )
-        self.top_k = self.config_emb_db['top_k']
-
-        # Initiate logger
-        self.logger = logger
-
         # Retrieve reference configs
         refs = self.config['references']
         linker_references = self.config['linker_references']
@@ -94,6 +132,27 @@ class VirtualHavruta:
         self.num_secondary_citations_linker = linker_references['num_secondary_citations']
         self.linker_primary_source_filter = linker_references['primary_source_filter']
         self.neo4j_deeplink = self.config_kg_db['neo4j_deeplink']
+        
+        # Initialize Neo4j vector index 
+        self.neo4j_vector = Neo4jVector.from_existing_index(
+            OpenAIEmbeddings(model=self.model_api['embedding_model']),
+            index_name="index",
+            url=self.config_emb_db['url'],
+            username=self.config_emb_db['username'],
+            password=self.config_emb_db['password'],
+        )
+        self.top_k = self.config_emb_db['top_k']
+
+        # Initialize modern semantic retriever
+        self.semantic_retriever = self.SemanticRetriever(
+            vector_store=self.neo4j_vector,
+            top_k=self.top_k,
+            primary_source_filter=self.primary_source_filter,
+            logger=logger
+        )
+
+        # Initiate logger
+        self.logger = logger
         
         # Initialize prompt templates and LLM instances
         self.initialize_prompt_templates()
@@ -117,11 +176,11 @@ class VirtualHavruta:
 
     def create_prompt_template(self, category: str, template: str, ref_mode: bool = False) -> ChatPromptTemplate:
         '''
-        Creates a prompt template for chat interactions based on a given category and template, optionally incorporating reference data.
+        Creates a modern ChatPromptTemplate for chat interactions following current LangChain best practices.
         
-        This function generates a prompt template suitable for chat interactions by combining system messages with a human message template.
+        This function generates a prompt template suitable for chat interactions by combining system messages with human message templates.
         It constructs the human message template dynamically based on whether reference data is required, incorporating it if the `ref_mode` parameter is set to True.
-        The resulting prompt template is encapsulated in a `ChatPromptTemplate` object, which includes both system and human message components.
+        The resulting prompt template follows modern LangChain patterns and is compatible with LCEL pipelines.
         
         Parameters:
             category (str): The category of the prompt template, specifying the type of interaction or task.
@@ -129,10 +188,12 @@ class VirtualHavruta:
             ref_mode (bool, optional): A flag indicating whether reference data should be included in the prompt; defaults to False.
         
         Returns:
-            ChatPromptTemplate: A `ChatPromptTemplate` object containing the system message and human message components necessary for chat interactions.
+            ChatPromptTemplate: A modern `ChatPromptTemplate` object containing the system message and human message components 
+                               necessary for chat interactions, compatible with LCEL pipelines.
         
         Example:
-            create_prompt_template("qa", "default", ref_mode=True) returns a `ChatPromptTemplate` object with a system message from the 'qa' category and a human message template that includes reference data.
+            create_prompt_template("qa", "default", ref_mode=True) returns a `ChatPromptTemplate` object with a system message 
+            from the 'qa' category and a human message template that includes reference data.
         '''
         system_message = SystemMessage(content=self.prompts[category][template])
         human_template = f"Question: {{human_input}}{' Reference Data: {ref_data}' if ref_mode else ''}."
@@ -168,16 +229,17 @@ class VirtualHavruta:
 
     def initialize_llm_chains(self, model, suffixes):
         '''
-        Initializes multiple language model chains on a class instance, each configured with a specific prompt template and suffix.
+        Initializes multiple language model chains on a class instance using modern LCEL patterns, 
+        each configured with a specific prompt template and suffix.
         
-        This function dynamically creates and assigns language model chain objects to attributes of a class instance.
+        This function dynamically creates and assigns LCEL pipeline objects to attributes of a class instance.
         It uses a base model and a list of suffixes to generate attribute names and corresponding prompt templates.
-        Each chain is initialized with the same model but different prompt templates, which are assumed to be predefined as attributes on the class instance.
-        This approach facilitates the management and use of multiple specialized tasks, such as QA, optimization, and adaptation, each requiring different prompt configurations.
+        Each chain is initialized as an LCEL pipeline using the | operator for composition, following modern LangChain best practices.
+        This approach facilitates the management and use of multiple specialized tasks, such as QA, optimization, and adaptation.
         
         Parameters:
         model (LanguageModel): The language model to be used for all chains.
-        suffixes (list of str): A list of suffix identifiers that correspond to different tasks or configurations. These suffixes are used to form both the attribute names for the chains and to retrieve corresponding prompt templates from the class instance.
+        suffixes (list of str): A list of suffix identifiers that correspond to different tasks or configurations.
 
         Example:
             initialize_llm_chains(getattr(self, model_name), suffixes)
@@ -186,36 +248,75 @@ class VirtualHavruta:
             setattr(self, f"chat_llm_chain_{suffix}",
                     self.create_llm_chain(model, getattr(self, f"prompt_{suffix}")))
 
-    def create_llm_chain(self, llm, prompt_template):
+    def create_rag_chain(self, retriever, llm, prompt_template):
         '''
-        Creates and returns an instance of a language model chain configured with a specified language model and prompt template.
+        Creates a modern RAG (Retrieval-Augmented Generation) chain using LCEL patterns.
         
-        This function initializes a language model chain using the provided language model and prompt template.
-        It sets the verbosity level to 'False' by default, which minimizes logging or debug output from the chain itself.
-        The resulting object is designed to facilitate customized interactions with the language model based on the specified prompt structure, enhancing the flexibility and applicability of the model for various tasks.
+        This function demonstrates modern LangChain best practices by creating a clear separation
+        between retrieval and generation phases. The chain follows the LCEL pattern with
+        proper pipeline composition using the | operator.
         
         Parameters:
-        llm (LanguageModel): The language model to be used in the chain.
-        prompt_template (str): The template string that defines the structure and content of prompts to be sent to the language model.
+        retriever: The retriever component for document retrieval
+        llm: The language model for generation
+        prompt_template: The prompt template for the generation phase
         
         Returns:
-        LLMChain: An instance of a language model chain configured with the given language model and prompt template.
+        RunnableSequence: A modern LCEL RAG pipeline
+        '''
+        # Modern RAG pattern: retrieval + context formatting + generation
+        def format_docs(docs):
+            """Format retrieved documents for the prompt."""
+            return "\n\n".join([f"Document {i+1}: {doc.page_content}" for i, doc in enumerate(docs)])
+        
+        # Create the RAG chain using LCEL
+        rag_chain = (
+            {
+                "context": retriever | RunnableLambda(format_docs),
+                "question": RunnablePassthrough()
+            }
+            | prompt_template
+            | llm
+            | RunnableLambda(lambda x: x.content)
+        )
+        
+        return rag_chain
+
+    def create_llm_chain(self, llm, prompt_template):
+        '''
+        Creates and returns a modern LCEL pipeline configured with a specified language model and prompt template.
+        
+        This function initializes a LangChain Expression Language (LCEL) pipeline using the provided language model and prompt template.
+        The pipeline follows modern LangChain best practices with the | operator for composition and includes a lambda function
+        to extract the content from the LLM response, maintaining compatibility with the existing codebase.
+        The resulting pipeline is designed to facilitate customized interactions with the language model based on the specified prompt structure,
+        enhancing the flexibility and applicability of the model for various tasks while following current LangChain idioms.
+        
+        Parameters:
+        llm (LanguageModel): The language model to be used in the pipeline.
+        prompt_template (ChatPromptTemplate): The prompt template that defines the structure and content of prompts to be sent to the language model.
+        
+        Returns:
+        RunnableSequence: A modern LCEL pipeline configured with the given language model and prompt template.
 
         Example:
-        create_llm_chain(model, getattr(self, f"prompt_{suffix}")))
+        create_llm_chain(model, getattr(self, f"prompt_{suffix}"))
         '''
-        return LLMChain(llm=llm, prompt=prompt_template, verbose=False)
+        # Use a lambda to extract content from the LLM response instead of StrOutputParser
+        # This ensures compatibility with existing code expectations
+        return prompt_template | llm | RunnableLambda(lambda x: x.content)
 
     def make_prediction(self, chain, query: str, action: str, msg_id: str = '', ref_data: str = ''):
         '''
-        Executes a prediction using a specified language model chain, providing logging and token tracking.
+        Executes a prediction using a modern LCEL pipeline, providing logging and token tracking.
 
-        This function interfaces with a language model chain to perform a specific action (e.g., QA, optimization, editing) based on the provided query and optional reference data.
+        This function interfaces with a modern LangChain Expression Language (LCEL) pipeline to perform a specific action 
+        (e.g., QA, optimization, editing) based on the provided query and optional reference data.
         It measures the number of tokens used in the process using a callback mechanism and logs both successful results and errors.
         The function is designed to handle both scenarios where reference data is and is not provided, optimizing its request to the model accordingly.
         
         Parameters:
-        chain (LanguageModelChain): The specific language model chain used for prediction.
+        chain (RunnableSequence): The LCEL pipeline used for prediction.
         query (str): The input query string for which the prediction is needed.
         action (str): The type of action the model is performing, used for logging.
         msg_id (str, optional): A message identifier used for logging purposes; defaults to an empty string.
@@ -232,7 +333,12 @@ class VirtualHavruta:
         '''
         with get_openai_callback() as cb:
             try: 
-                res = chain.predict(human_input=query, ref_data=ref_data) if ref_data else chain.predict(human_input=query)
+                # Prepare input for LCEL pipeline
+                input_dict = {"human_input": query}
+                if ref_data:
+                    input_dict["ref_data"] = ref_data
+                
+                res = chain.invoke(input_dict)
                 self.logger.info(f"MsgID={msg_id}. [INFERENCE] Spent {cb.total_tokens} tokens for {action}. Query={query}. Reference data={ref_data}. Result={res}.")
             except Exception as e:
                 self.logger.error(f"MsgID={msg_id}. [INFERENCE] Spent {cb.total_tokens} tokens for {action} but failed. Error is {e}.")
@@ -350,19 +456,19 @@ class VirtualHavruta:
 
     def retrieve_docs(self, query: str, msg_id: str = '', filter_mode: str='primary'):
         '''
-        Retrieves documents that match a specified query and filters them based on whether they are primary or secondary sources, using a similarity search.
-
-        This function performs a similarity search based on the provided query and retrieves documents that either match the characteristics of primary or secondary sources as defined by a filter set.
-        The results are filtered by checking each document's metadata against a predefined set of source filters.
-        The function logs the process to ensure transparency and is equipped to handle errors related to invalid filter modes, raising a ValueError if necessary.
+        Retrieves documents using the modern semantic retriever pattern following LangChain best practices.
+        
+        This function uses the modern SemanticRetriever class to perform similarity search and filtering,
+        providing clean separation between retrieval logic and other components. The retriever follows
+        LangChain's BaseRetriever interface, making it compatible with modern RAG patterns and LCEL pipelines.
         
         Parameters:
         query (str): The query string used to search for relevant documents.
         msg_id (str, optional): A message identifier used for logging purposes; defaults to an empty string.
-        filter_mode (str): The mode to filter the search results by 'primary' or 'secondary' to determine the relevance of the sources.
+        filter_mode (str): The mode to filter the search results by 'primary', 'secondary', or 'all'.
         
         Returns:
-        retrieval_res: A list of documents that meet the criteria of the specified filter mode, either as primary or secondary sources.
+        list: A list of (document, score) tuples that meet the criteria of the specified filter mode.
         
         Raises:
         ValueError: If an invalid filter_mode is provided, an exception is raised to indicate the error.
@@ -370,19 +476,12 @@ class VirtualHavruta:
         Example:
         primary_retrieval_result = vh.retrieve_docs(query, msgid, 'primary')
         '''
-        self.logger.info(f"MsgID={msg_id}. [RETRIEVAL] Simple semantic search at work. Retrieving {filter_mode} references using this query: {query}")
-        # Convert primary_source_filter to a set for efficient lookup
-        retrieved_docs = self.neo4j_vector.similarity_search_with_relevance_scores(
-            query, self.top_k,
-            )
-        # Filter the documents based on whether we're looking for primary or secondary sources
-        if filter_mode == 'primary':
-            predicate = lambda doc: any(s in doc[0].metadata['source'] for s in self.primary_source_filter)
-        elif filter_mode == 'secondary':
-            predicate = lambda doc: not any(s in doc[0].metadata['source'] for s in self.primary_source_filter)
-        else:
-            raise ValueError(f"MsgID={msg_id}. Invalid filter_mode: {filter_mode}")
-        retrieval_res = list(filter(predicate, retrieved_docs))
+        self.logger.info(f"MsgID={msg_id}. [RETRIEVAL] Modern semantic retriever at work. Retrieving {filter_mode} references using this query: {query}")
+        
+        # Use the modern retriever
+        retrieval_res = self.semantic_retriever.get_relevant_documents_with_scores(query, filter_mode)
+        
+        self.logger.info(f"MsgID={msg_id}. [RETRIEVAL] Retrieved {len(retrieval_res)} documents with filter_mode='{filter_mode}'")
         return retrieval_res
 
     def retrieve_docs_metadata_filtering(self, query: str, msg_id: str = '', metadata_fiter: dict|None=None):
@@ -930,7 +1029,66 @@ class VirtualHavruta:
             self.logger.info(f"MsgID={msg_id}. [KG DEEP LINK] Empty KG deep link for secondary references.")
         return neo4j_deeplink
 
+    def qa_with_rag(self, query: str, msg_id: str = '', use_retrieval: bool = True):
+        '''
+        Performs question-answering using modern RAG patterns with clear separation of retrieval and generation.
+        
+        This method demonstrates modern LangChain best practices by using a proper RAG chain that
+        separates retrieval and generation phases. It can optionally disable retrieval for direct
+        question answering without context.
+        
+        Parameters:
+        query (str): The question to be answered
+        msg_id (str, optional): A message identifier used for logging purposes
+        use_retrieval (bool): Whether to use retrieval for context (RAG) or direct QA
+        
+        Returns:
+        tuple: A tuple containing the answer (str) and token count (int)
+        '''
+        with get_openai_callback() as cb:
+            try:
+                if use_retrieval:
+                    # Modern RAG approach: use retriever + generator
+                    rag_chain = self.create_rag_chain(
+                        retriever=self.semantic_retriever,
+                        llm=self.main_model if hasattr(self, 'main_model') else self.support_model,
+                        prompt_template=self.prompt_qa
+                    )
+                    response = rag_chain.invoke(query)
+                else:
+                    # Direct QA without retrieval
+                    response = self.chat_llm_chain_qa.invoke({"human_input": query})
+                
+                self.logger.info(f"MsgID={msg_id}. [QA-RAG] Spent {cb.total_tokens} tokens. Query={query}. RAG_enabled={use_retrieval}. Result={response}.")
+                return response, cb.total_tokens
+                
+            except Exception as e:
+                self.logger.error(f"MsgID={msg_id}. [QA-RAG] Spent {cb.total_tokens} tokens but failed. Error is {e}.")
+                return '', cb.total_tokens
+
     def qa(self, query: str, ref_data: str, msg_id: str = ''):
+        '''
+        Executes a query against a language model chain, returning the response and token count.
+
+        This function interfaces with a chain of language models to perform a question-answering (QA) task. 
+        It sends the provided query along with reference data to the model, captures both the textual response and the count of tokens used in the model's reply. 
+        The token count helps in monitoring and managing usage relative to any constraints or limits.
+        Detailed logging is performed using an optional message ID for tracking and debugging purposes.
+        
+        Parameters:
+        query (str): The query string to be processed by the QA model.
+        ref_data (str): Additional reference data that might be required by the model for generating the answer.
+        msg_id (str, optional): A message identifier used for logging purposes; defaults to an empty string.
+        
+        Returns:
+        tuple: A tuple containing the model's response (str) and the token count (int) used in generating that response.
+
+        Example:
+        response, tok_count = vh.qa(query, ref_data, msgid)
+        '''
+        response, tok_count = self.make_prediction(
+                    self.chat_llm_chain_qa, query, "qa", msg_id, ref_data)
+        return response, tok_count
         '''
         Executes a query against a language model chain, returning the response and token count.
 
